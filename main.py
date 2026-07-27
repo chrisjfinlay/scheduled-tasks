@@ -1,38 +1,50 @@
-# To run and test the code you need to update 4 places:
-# 1. Change MY_EMAIL/MY_PASSWORD to your own details.
-# 2. Go to your email provider and make it allow less secure apps.
-# 3. Update the SMTP ADDRESS to match your email provider.
-# 4. Update birthdays.csv to contain today's month and day.
-# See the solution video in the 100 Days of Python Course for explainations.
+import requests, datetime, os
+from twilio.rest import Client
+
+# OpenWeather weather codes: https://openweathermap.org/api/weather-conditions#Weather-Condition-Codes-2
+
+# OpenWeather setup
+OPENWEATHER_API_KEY = os.environ.get("OWM_API_KEY")
+lat=54.154331
+lon=-4.480060
+# endpoint = "https://api.openweathermap.org/data/2.5/weather"
+openweather_api_endpoint = "https://api.openweathermap.org/data/2.5/forecast"
+params = {
+    "lat": lat,
+    "lon": lon,
+    "appid": OPENWEATHER_API_KEY,
+    "cnt": 4,
+}
+date_format = "%Y-%m-%d %H:%M:%S"
+# 2026-07-28 03:00:00
+
+# Twilio Setup
+account_sid = os.environ.get("TWILIO_ACC_SID")
+auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+client = Client(account_sid, auth_token)
+
+will_rain = False
+rain_times = []
 
 
-from datetime import datetime
-import pandas
-import random
-import smtplib
-import os
+weather_response = requests.get(openweather_api_endpoint, params)
+weather_response.raise_for_status()
+weather_data = weather_response.json()
+weather_list = weather_data["list"]
+for forecast in weather_list:
+    condition_code = forecast["weather"][0]["id"]
+    if 200 <= condition_code < 700:
+        rain_date = datetime.datetime.strptime(forecast["dt_txt"], date_format)
+        rain_times.append(str(f"{rain_date.hour:02d}:{rain_date.minute:02d}"))
+        will_rain = True
 
-# import os and use it to get the Github repository secrets
-MY_EMAIL = os.environ.get("MY_EMAIL")
-MY_PASSWORD = os.environ.get("MY_PASSWORD")
-
-today = datetime.now()
-today_tuple = (today.month, today.day)
-
-data = pandas.read_csv("birthdays.csv")
-birthdays_dict = {(data_row["month"], data_row["day"])                  : data_row for (index, data_row) in data.iterrows()}
-if today_tuple in birthdays_dict:
-    birthday_person = birthdays_dict[today_tuple]
-    file_path = f"letter_templates/letter_{random.randint(1, 3)}.txt"
-    with open(file_path) as letter_file:
-        contents = letter_file.read()
-        contents = contents.replace("[NAME]", birthday_person["name"])
-
-    with smtplib.SMTP("YOUR EMAIL PROVIDER SMTP SERVER ADDRESS") as connection:
-        connection.starttls()
-        connection.login(MY_EMAIL, MY_PASSWORD)
-        connection.sendmail(
-            from_addr=MY_EMAIL,
-            to_addrs=birthday_person["email"],
-            msg=f"Subject:Happy Birthday!\n\n{contents}"
-        )
+if will_rain:
+    # print(f"Bring an umbrella. It is expected to rain at {", ".join(rain_times)}")
+    message = client.messages.create(
+        body=f"☔ Bring an umbrella. It is expected to rain at {", ".join(rain_times)}",
+        from_=os.environ.get("FROM_NUMBER"),
+        to=os.environ.get("TO_NUMBER"),
+    )
+    print(message.status)
+else:
+    print("You will not need an umbrella in the next 12 hours.")
